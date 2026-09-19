@@ -1,10 +1,14 @@
 import Foundation
 import UserNotifications
 
-class AlarmScheduler: ObservableObject {
+class AlarmScheduler: NSObject, UNUserNotificationCenterDelegate {
     static let shared = AlarmScheduler()
 
-    // Ask user for permission to send notifications (called once on first launch)
+    override init() {
+        super.init()
+        UNUserNotificationCenter.current().delegate = self
+    }
+
     func requestPermission() {
         UNUserNotificationCenter.current().requestAuthorization(
             options: [.alert, .sound, .badge]
@@ -16,40 +20,30 @@ class AlarmScheduler: ObservableObject {
         }
     }
 
-    // Schedule an alarm for a given Alarm object
     func schedule(alarm: Alarm) {
         let content = UNMutableNotificationContent()
         content.title = alarm.label.isEmpty ? "PushToWake" : alarm.label
         content.body = "Complete \(alarm.pushupCount) pushups to dismiss"
         content.sound = UNNotificationSound.defaultCritical
-        content.interruptionLevel = .critical  // Bypasses Do Not Disturb
+        content.interruptionLevel = .critical
 
         let calendar = Calendar.current
         let components = calendar.dateComponents([.hour, .minute], from: alarm.time)
 
         if alarm.repeatDays.isEmpty {
-            // One-time alarm — fires once at the set time
-            let trigger = UNCalendarNotificationTrigger(
-                dateMatching: components,
-                repeats: false
-            )
+            let trigger = UNCalendarNotificationTrigger(dateMatching: components, repeats: false)
             addNotification(id: alarm.id.uuidString, content: content, trigger: trigger)
         } else {
-            // Repeating alarm — schedule one notification per selected day
             for day in alarm.repeatDays {
                 var repeatingComponents = components
                 repeatingComponents.weekday = day.rawValue
-                let trigger = UNCalendarNotificationTrigger(
-                    dateMatching: repeatingComponents,
-                    repeats: true
-                )
+                let trigger = UNCalendarNotificationTrigger(dateMatching: repeatingComponents, repeats: true)
                 let notifID = "\(alarm.id.uuidString)-\(day.rawValue)"
                 addNotification(id: notifID, content: content, trigger: trigger)
             }
         }
     }
 
-    // Cancel a scheduled alarm by its ID
     func cancel(alarm: Alarm) {
         var ids = [alarm.id.uuidString]
         for day in Alarm.Weekday.allCases {
@@ -58,7 +52,6 @@ class AlarmScheduler: ObservableObject {
         UNUserNotificationCenter.current().removePendingNotificationRequests(withIdentifiers: ids)
     }
 
-    // Internal helper to register a notification with the system
     private func addNotification(id: String, content: UNMutableNotificationContent, trigger: UNCalendarNotificationTrigger) {
         let request = UNNotificationRequest(identifier: id, content: content, trigger: trigger)
         UNUserNotificationCenter.current().add(request) { error in
@@ -66,5 +59,11 @@ class AlarmScheduler: ObservableObject {
                 print("Failed to schedule alarm: \(error.localizedDescription)")
             }
         }
+    }
+
+    func userNotificationCenter(_ center: UNUserNotificationCenter,
+                                 willPresent notification: UNNotification,
+                                 withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void) {
+        completionHandler([.banner, .sound])
     }
 }
